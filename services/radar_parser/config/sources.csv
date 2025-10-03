@@ -1,0 +1,10 @@
+name,type,url
+RBC Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=rbc_news&format=Atom
+Kommersant Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=kommersant&format=Atom
+TASS Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=tass_agency&format=Atom
+Finanz Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=finanzru&format=Atom
+Vesti Finance Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=vestifinance&format=Atom
+Reuters Biz Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=ReutersBiz&format=Atom
+Bloomberg Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=business&format=Atom
+CNBC Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=CNBCnow&format=Atom
+ZeroHedge Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=zerohedge&format=Atom
