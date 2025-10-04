@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Query, HTTPException
 from .service import get_top_k
 
-app = FastAPI(title="RADAR (async)")
+app = FastAPI(title="RADAR")
 
 @app.get("/radar")
 async def radar(window: int = Query(24, gt=0), k: int = Query(5, gt=0)):
@@ -15,4 +15,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("radar_api.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("services.api.src.api.__main__:app", host="127.0.0.1", port=8000, reload=True)
