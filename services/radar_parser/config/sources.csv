@@ -1,10 +1,77 @@
-name,type,url
-RBC Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=rbc_news&format=Atom
-Kommersant Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=kommersant&format=Atom
-TASS Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=tass_agency&format=Atom
-Finanz Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=finanzru&format=Atom
-Vesti Finance Telegram,bridge,http://localhost:3000/?action=display&bridge=Telegram&username=vestifinance&format=Atom
-Reuters Biz Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=ReutersBiz&format=Atom
-Bloomberg Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=business&format=Atom
-CNBC Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=CNBCnow&format=Atom
-ZeroHedge Twitter,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=zerohedge&format=Atom
+name,type,url,verify_ssl,limit,fallback_url,tags
+CNBC Top (RSS),rss,https://www.cnbc.com/id/100003114/device/rss/rss.html,,,nan,media
+CNBC Markets (RSS),rss,https://www.cnbc.com/id/10001147/device/rss/rss.html,,,nan,media
+WSJ Markets (RSS),rss,https://feeds.a.dj.com/rss/RSSMarketsMain.xml,,,nan,media
+Financial Times (RSS),rss,https://www.ft.com/?format=rss,,,nan,media
+AP Top Stories,rss,https://apnews.com/hub/ap-news?utm_source=apnews.com&utm_medium=referral&utm_campaign=rss,,,None,None
+AP World News,rss,https://apnews.com/hub/world-news?utm_source=apnews.com&utm_medium=referral&utm_campaign=rss,,,None,None
+AP Business,rss,https://apnews.com/hub/business?utm_source=apnews.com&utm_medium=referral&utm_campaign=rss,,,None,None
+Bloomberg @business (X via Bridge),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=business&format=Atom,,,nan,None
+Bloomberg @markets (X via Bridge),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=markets&format=Atom,,,nan,None
+Reuters World via Bridge,bridge,http://localhost:3000/?action=display&bridge=Reuters&feed=world&format=Atom,,,nan,None
+Reuters Biz via Bridge,bridge,http://localhost:3000/?action=display&bridge=Reuters&feed=business&format=Atom,,,nan,None
+WSJ Markets (X via Bridge),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=WSJmarkets&format=Atom,,,nan,None
+TASS (RSS),rss,https://tass.ru/rss/v2.xml,,,nan,ru
+Interfax (RSS),rss,https://www.interfax.ru/rss.asp,,,nan,ru
+Vedomosti (RSS),rss,https://www.vedomosti.ru/rss/news,,,nan,ru
+Banki.ru News,rss,https://www.banki.ru/xml/news.rss,,,None,None
+RBC Economy (listing),html_listing,https://www.rbc.ru/economics/,,15,nan,ru
+Kommersant Finance (listing),html_listing,https://www.kommersant.ru/rubric/3,,15,nan,ru
+TASS Economy (listing),html_listing,https://tass.ru/ekonomika,,12,nan,ru
+Vedomosti Biz (TG via Bridge),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=vedomosti&format=Atom,,,nan,None
+Interfax (TG via Bridge),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=interfaxonline&format=Atom,,,nan,None
+Minfin Russia (TG via Bridge),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=minfin&format=Atom,,,nan,None
+CBR (TG via Bridge),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=cbr_official&format=Atom,,,nan,None
+Federal Reserve (RSS),rss,https://www.federalreserve.gov/feeds/press_all.xml,,,nan,regulator
+US Treasury Press,rss,https://home.treasury.gov/news/press-releases/rss.xml,,,None,None
+SEC Press (RSS),rss,https://www.sec.gov/news/pressreleases.rss,,,nan,regulator
+OFAC Updates (RSS),rss,https://home.treasury.gov/news/press-releases/rss.xml,,,nan,sanctions
+ECB Press (RSS),rss,https://www.ecb.europa.eu/press/pressreleases/html/index.en.rss,,,nan,regulator
+Bank of England News (RSS),rss,https://www.bankofengland.co.uk/news/newsrss,,,nan,regulator
+Bank of Russia Press (RSS),rss,https://www.cbr.ru/eng/press/pr/?rss=1,,,nan,regulator
+Rosstat (RSS),rss,https://rosstat.gov.ru/storage/rss.xml,,,nan,macro
+BLS Latest (RSS),rss,https://www.bls.gov/feed/bls_latest.rss,,,nan,macro
+EIA Today (RSS),rss,https://www.eia.gov/rss/todayinenergy.xml,,,nan,energy
+Accesswire (RSS),rss,https://www.accesswire.com/rss/newsroom,,,nan,wire
+Bloomberg @business (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=business&format=Atom,,,nan,media
+Bloomberg @markets (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=markets&format=Atom,,,nan,media
+WSJ Markets (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=WSJmarkets&format=Atom,,,nan,media
+Financial Times (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=FT&format=Atom,,,nan,media
+The Economist (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=TheEconomist&format=Atom,,,nan,media
+Banki.ru (RSS),rss,https://www.banki.ru/news/lenta.rss,,,nan,ru
+Vedomosti Biz (listing),html_listing,https://www.vedomosti.ru/rubrics/business,,15,nan,ru
+Interfax (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=interfaxonline&format=Atom,,,nan,nan
+Vedomosti (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=vedomosti&format=Atom,,,nan,nan
+Federal Reserve (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=federalreserve&format=Atom,,,nan,regulator
+US Treasury (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=USTreasury&format=Atom,,,nan,regulator
+ECB (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=ecb&format=Atom,,,nan,regulator
+Bank of England (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=bankofengland&format=Atom,,,nan,regulator
+BoJ (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=Bank_of_Japan_e&format=Atom,,,nan,regulator
+IMF (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=IMFNews&format=Atom,,,nan,macro
+World Bank (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=WorldBank&format=Atom,,,nan,macro
+Minfin Russia (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=minfin&format=Atom,,,nan,nan
+CBR (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=cbr_official&format=Atom,,,nan,nan
+Rosstat (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=rosstat_ru&format=Atom,,,nan,nan
+OPEC (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=OPECSecretariat&format=Atom,,,nan,energy
+IEA (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=IEA&format=Atom,,,nan,energy
+LME (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=LME_news&format=Atom,,,nan,commodities
+AP Top via Bridge,bridge,http://localhost:3000/?action=display&bridge=GoogleNews&g=US&q=site:apnews.com&format=Atom,,,wire,None
+PR Newswire via Bridge,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=prnewswire&format=Atom,,,wire,None
+BusinessWire via Bridge,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=BusinessWire&format=Atom,,,wire,None
+GlobeNewswire via Bridge,bridge,http://localhost:3000/?action=display&bridge=Twitter&u=GlobeNewswire&format=Atom,,,wire,None
+ECB Press (RSS),rss,https://www.ecb.europa.eu/press/rss/press_release.en.rss,,true,nan,regulator
+Fed (RSS),rss,https://www.federalreserve.gov/feeds/press_all.xml,,true,nan,regulator
+Eurostat (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=EU_Eurostat&format=Atom,,,nan,macro
+Bank of Russia (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=cbr_official&format=Atom,,,nan,regulator
+CME Group (X),bridge,http://localhost:3000/?action=display&bridge=Twitter&u=CMEGroup&format=Atom,,,exchange,None
+MOEX (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=moex&format=Atom,,,exchange,None
+Минэкономразвития (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=mineconomy&format=Atom,,,ru,None
+ФНС России (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=fns_russia&format=Atom,,,ru,None
+Минпромторг (TG),bridge,http://localhost:3000/?action=display&bridge=Telegram&username=minpromtorg_russia&format=Atom,,,ru,None
+BoJ News (listing),html_listing,https://www.boj.or.jp/en/announcements/release_2025/index.htm,,20,,macro
+Eurostat News (listing),html_listing,https://ec.europa.eu/eurostat/news,,20,,macro
+CME News (listing),html_listing,https://www.cmegroup.com/media-room.html,,20,,markets
+LME News (listing),html_listing,https://www.lme.com/en/discover/news,,20,,commodities
+OPEC News (listing),html_listing,https://www.opec.org/opec_web/en/press_room/28.htm,,20,,energy
+IEA News (listing),html_listing,https://www.iea.org/news,,20,,energy
+MOEX News,rss,https://www.moex.com/export/news.aspx?type=rss,,,,ru

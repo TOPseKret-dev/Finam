@@ -1,31 +1,47 @@
+
+from __future__ import annotations
+import os, csv
 from pathlib import Path
-import csv, os
-from typing import List, Dict, Optional
+from typing import List, Dict, Any
 
-ENV_CONFIG = "RADAR_SOURCES_CSV"
+_DEFAULT_REL = "services/radar_parser/config/sources.csv"
 
-def _project_root() -> Path:
-    # src/radar_parser/app/config.py -> project root = 3 уровня вверх
-    return Path(__file__).resolve().parents[3]
+def resolve_config_path(config_path: str | None, project_root: str | None = None) -> str:
+    tried: list[str] = []
 
-def resolve_config_path(path_like: Optional[str], project_root: Optional[str|Path]) -> str:
-    pr = Path(project_root).resolve() if project_root else _project_root()
-    if path_like:
-        p = Path(path_like)
-        return str(p if p.is_absolute() else (pr / p).resolve())
-    env = os.getenv(ENV_CONFIG)
-    if env:
-        p = Path(env)
-        return str(p if p.is_absolute() else (pr / p).resolve())
-    return str((pr / "config" / "sources.csv").resolve())
+    def _exists(p: str) -> str | None:
+        tried.append(p)
+        return p if Path(p).exists() else None
 
-def load_sources(abs_path: str) -> List[Dict[str, str]]:
-    p = Path(abs_path)
-    if not p.exists():
-        raise FileNotFoundError(f"Sources CSV not found: {p}")
-    rows = []
-    with p.open("r", encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        for r in reader:
-            rows.append({k: (v or "").strip() for k,v in r.items()})
+    # 1) явный параметр
+    if config_path:
+        p = _exists(config_path)
+        if p: return p
+
+    # 2) env
+    env_p = os.getenv("RADAR_SOURCES")
+    if env_p:
+        p = _exists(env_p)
+        if p: return p
+
+    # 3) путь внутри репозитория
+    repo_root = Path(project_root or Path(__file__).resolve().parents[5])  # .../services/radar_parser/src/radar_parser/app
+    repo_p = repo_root / _DEFAULT_REL
+    p = _exists(str(repo_p))
+    if p: return p
+
+    # 4) пакетный ресурс рядом с модулем (например, при установке как wheel)
+    pkg_p = Path(__file__).resolve().parents[3] / "config" / "sources.csv"
+    p = _exists(str(pkg_p))
+    if p: return p
+
+    # 5) ничего не нашли — объясняем, где искали
+    raise FileNotFoundError("Sources CSV not found. Tried:\n" + "\n".join(tried))
+
+def load_sources(p: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    with open(p, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            # нормализуем ключи
+            rows.append({k.strip().lower(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()})
     return rows

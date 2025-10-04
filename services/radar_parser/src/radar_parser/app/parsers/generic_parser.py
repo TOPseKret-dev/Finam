@@ -1,17 +1,44 @@
-# src/app/parsers/generic_parser.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
-import feedparser
-from typing import List, Dict, Any
 
-def parse_atom(feed_xml: str, source: str) -> List[Dict[str, Any]]:
-    parsed = feedparser.parse(feed_xml)
-    items: List[Dict[str, Any]] = []
-    for e in parsed.entries:
-        items.append({
-            "source":   source,
-            "title":    e.get("title"),
-            "link":     e.get("link"),
-            "published": e.get("published") or e.get("updated") or e.get("pubDate"),
-            "summary":  e.get("summary") or e.get("description") or "",
-        })
-    return items
+from datetime import datetime, timezone
+from typing import Optional
+
+from dateutil import parser as dtp, tz
+
+# Нормализация таймзон (убирает варнинги вида UnknownTimezoneWarning: EST ...)
+TZINFOS = {
+    "UTC": tz.UTC,
+    "GMT": tz.UTC,
+    "EST": tz.gettz("America/New_York"),
+    "EDT": tz.gettz("America/New_York"),
+    "CST": tz.gettz("America/Chicago"),
+    "CDT": tz.gettz("America/Chicago"),
+    "PST": tz.gettz("America/Los_Angeles"),
+    "PDT": tz.gettz("America/Los_Angeles"),
+    "BST": tz.gettz("Europe/London"),
+    "CEST": tz.gettz("Europe/Paris"),
+    "CET": tz.gettz("Europe/Paris"),
+    "MSK": tz.gettz("Europe/Moscow"),
+}
+
+def parse_date_safe(s: Optional[str]) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        return dtp.parse(s, tzinfos=TZINFOS)
+    except Exception:
+        return None
+
+def to_iso_utc(dt_obj: Optional[datetime]) -> Optional[str]:
+    if not dt_obj:
+        return None
+    if not dt_obj.tzinfo:
+        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+    return dt_obj.astimezone(timezone.utc).isoformat()
+
+def first_nonempty(*vals):
+    for v in vals:
+        if v is not None and v != "":
+            return v
+    return None
