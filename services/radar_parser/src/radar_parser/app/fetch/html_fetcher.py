@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 import os
 import time
@@ -14,6 +13,8 @@ DEFAULT_HEADERS = {
 }
 
 _LAST_HIT = defaultdict(float)
+
+
 def _sleep_if_needed(url: str, min_gap: float = 0.7):
     host = urlparse(url).hostname or ""
     now = time.time()
@@ -21,6 +22,7 @@ def _sleep_if_needed(url: str, min_gap: float = 0.7):
     if elapsed < min_gap:
         time.sleep(min_gap - elapsed)
     _LAST_HIT[host] = time.time()
+
 
 def fetch_html(url: str, timeout: int = 25, verify: bool | None = None) -> str:
     if verify is None:

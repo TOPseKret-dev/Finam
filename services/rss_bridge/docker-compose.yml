@@ -1,0 +1,13 @@
+services:
+  rss-bridge:
+    image: rssbridge/rss-bridge:latest
+    container_name: rss-bridge
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"          # локально: http://localhost:8080
+    volumes:
+      - ./config/config.ini.php:/app/config.ini.php:ro
+      - rssbridge_cache:/app/cache
+
+volumes:
+  rssbridge_cache:

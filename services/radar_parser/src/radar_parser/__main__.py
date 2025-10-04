@@ -1,4 +1,3 @@
-# src/radar_parser/__main__.py
 import sys, json
 from .pipeline import run_pipeline
 

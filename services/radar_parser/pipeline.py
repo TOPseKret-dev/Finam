@@ -1,16 +1,15 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import os, sys
 from typing import Optional, Dict, Any, List
 
-from src.radar_parser.app.config import load_sources
-from src.radar_parser.app.fetch.rss_direct import fetch_rss
-from src.radar_parser.app.fetch.html_fetcher import fetch_html
-from src.radar_parser.app.parsers.atom_parser import parse_atom
-from src.radar_parser.app.parsers.site_parsers import parse_html as parse_html_doc
-from src.radar_parser.app.parsers.listing_fetch import fetch_listing_and_articles
+from radar_parser.app.config import load_sources
+from radar_parser.app.fetch.rss_direct import fetch_rss
+from radar_parser.app.fetch.html_fetcher import fetch_html
+from radar_parser.app.parsers.atom_parser import parse_atom
+from radar_parser.app.parsers.site_parsers import parse_html as parse_html_doc
+from radar_parser.app.parsers.listing_fetch import fetch_listing_and_articles
 
 SOURCE_TYPES = {"rss", "bridge", "html", "html_listing"}
 
@@ -52,17 +51,14 @@ HANDLERS = {
 
 
 def run_pipeline(config_path: Optional[str] = None, hours: int = 48, max_workers: int = 8) -> Dict[str, Any]:
-    # 0) Явный аргумент или ENV — первичны
     cfg = config_path or os.getenv("RADAR_SOURCES")
 
-    # 1) Если не задано — ищем рядом с этим файлом: services/radar_parser/config/sources.csv
     if not cfg:
         here = Path(__file__).resolve()
         default_local = here.parent / "config" / "sources.csv"
         if default_local.exists():
             cfg = str(default_local)
 
-    # 2) Если всё ещё пусто — проверяем пару типовых кандидатов относительно sys.path[0]
     if not cfg:
         base = Path(sys.path[0]).resolve()
         candidates = [
@@ -75,7 +71,6 @@ def run_pipeline(config_path: Optional[str] = None, hours: int = 48, max_workers
                 cfg = str(p)
                 break
 
-    # 3) Финальная проверка — больше никогда не передаём пустую строку в load_sources
     if not cfg or not Path(cfg).exists():
         raise FileNotFoundError(
             "Не найден sources.csv.\n"
@@ -83,7 +78,6 @@ def run_pipeline(config_path: Optional[str] = None, hours: int = 48, max_workers
             "Ожидалось, например: services/radar_parser/config/sources.csv"
         )
 
-    # Дальше как у тебя: читаем конфиг
     sources = load_sources(cfg)
     used_sources = [s for s in sources if (s.get("type") or "").strip().lower() in SOURCE_TYPES]
 

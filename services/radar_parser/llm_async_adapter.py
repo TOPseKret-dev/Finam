@@ -3,10 +3,9 @@ import asyncio, re, html, hashlib
 from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
-from bs4 import BeautifulSoup  # pip install beautifulsoup4
+from bs4 import BeautifulSoup
 from dateutil import parser as dtp, tz
 
-# ===== настройки времени =====
 TARGET_TZ = ZoneInfo("Europe/Moscow")
 TZINFOS = {
     "UTC": tz.UTC, "GMT": tz.UTC,
@@ -17,7 +16,6 @@ TZINFOS = {
     "MSK": tz.gettz("Europe/Moscow"),
 }
 
-# ===== утилиты =====
 NOISE_PATTERNS = [
     r"Please open Telegram to view this post",
     r"VIEW IN TELEGRAM",
@@ -29,6 +27,14 @@ NOISE_PATTERNS = [
 ]
 NOISE_RE = re.compile("|".join(f"(?:{p})" for p in NOISE_PATTERNS),
                       re.IGNORECASE | re.MULTILINE)
+
+ERROR_PHRASES = (
+    "bridge returned error",
+    "404 page not found",
+    "navigation",
+    "access denied",
+    "forbidden",
+)
 
 
 def _cleanup_noise(text: str) -> str:
@@ -81,11 +87,71 @@ def _fingerprint(s: str) -> str:
     return hashlib.sha1(_norm_for_dupe(s).encode("utf-8")).hexdigest()
 
 
+def _http_code_in(obj: Any) -> Optional[int]:
+    """
+    Пытается найти HTTP-код в dict (включая вложенные 'response'/'meta'/'result').
+    Возвращает int (100..599) или None, если ничего похожего не найдено.
+    """
+    if not isinstance(obj, dict):
+        return None
+
+    candidate_keys = ("status", "status_code", "http", "http_status", "code")
+    for k in candidate_keys:
+        v = obj.get(k)
+        if isinstance(v, (int, str)) and str(v).isdigit():
+            iv = int(v)
+            if 100 <= iv <= 599:
+                return iv
+
+    for container in ("response", "meta", "result"):
+        sub = obj.get(container)
+        if isinstance(sub, dict):
+            iv = _http_code_in(sub)
+            if iv is not None:
+                return iv
+    return None
+
+
+def _has_bad_http(obj: Dict[str, Any]) -> bool:
+    """
+    True если найден явный не-2xx HTTP-код, либо ok=False, либо присутствуют error/exception/traceback.
+    """
+    code = _http_code_in(obj)
+    if code is not None:
+        return not (200 <= code < 300)
+
+    ok = obj.get("ok")
+    if isinstance(ok, bool) and ok is False:
+        return True
+
+    if any(obj.get(k) for k in ("error", "exception", "traceback")):
+        return True
+
+    return False
+
+
+def _is_garbage_text(body: str, title: str) -> bool:
+    s = f"{title} {body}".lower()
+    if any(p in s for p in ERROR_PHRASES):
+        return True
+    # слишком короткие куски — часто навигация/прокладки
+    if len(_norm_for_dupe(body)) < 40:
+        return True
+    return False
+
+
+def _is_bad_link(link: Optional[str]) -> bool:
+    if not link:
+        return False
+    l = link.lower()
+    return ("localhost:" in l) or ("rss-bridge" in l)
+
+
 def _to_llm_schema(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Преобразует твои items -> список словарей вида:
+    Преобразует items -> список словарей вида:
     {
-      "Время выхода": ISO8601 в Asia/Almaty или None,
+      "Время выхода": ISO8601 в Europe/Moscow или None,
       "источник": str,
       "текст статьи": str (очищенный),
       "список ссылок внутри текста": [str, ...],
@@ -96,13 +162,13 @@ def _to_llm_schema(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     tmp: List[Dict[str, Any]] = []
     freq: Dict[str, int] = {}
 
-    # 1) сбор с очисткой и первичным fp
     for it in items:
         title = it.get("title") or ""
         summary = it.get("summary") or it.get("description") or ""
         raw = f"{title}. {summary}".strip(". ")
+
         body, inner_links = _extract_text_and_links(raw)
-        if len(body) < 25:  # вдруг только заголовок информативен
+        if len(body) < 25:  # иногда только заголовок информативен
             t_only, _ = _extract_text_and_links(title)
             if len(t_only) > len(body):
                 body = t_only
@@ -112,20 +178,24 @@ def _to_llm_schema(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         when = dt.isoformat() if dt else None
         source = it.get("source") or it.get("feed") or "unknown"
 
+        if _is_garbage_text(body, title):
+            continue
+        if _is_bad_link(link):
+            continue
+
         rec = {
             "Время выхода": when,
             "источник": source,
             "текст статьи": body,
             "список ссылок внутри текста": inner_links,
             "ссылка на саму статью": link,
-            "количество повторений": 1,  # скорректируем позже
+            "количество повторений": 1,
         }
         fp = _fingerprint(body or title)
         rec["_fp"] = fp
         tmp.append(rec)
         freq[fp] = freq.get(fp, 0) + 1
 
-    # 2) проставляем повторы и убираем точные дубли по (link,text)
     out: List[Dict[str, Any]] = []
     seen_pairs = set()
     for r in tmp:
@@ -139,27 +209,25 @@ def _to_llm_schema(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-# ===== Публичный async-API =====
 async def build_llm_payload(hours: int = 48, config_path: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Асинхронно дергает твой run_pipeline (в отдельном потоке, чтобы не блокировать event loop),
+    Асинхронно дергает run_pipeline (в отдельном потоке),
     и возвращает список словарей в требуемом формате.
+
+    Дополнительно: отбрасывает items, у которых HTTP-статус явно не 2xx
+    (ищется в ключах status/status_code/http/http_status/code, в т.ч. во вложенных 'response'/'meta'/'result'),
+    либо присутствует ok=False / error / exception / traceback.
     """
 
     def _runner():
-        from pipeline import run_pipeline
+        from services.radar_parser.pipeline import run_pipeline
         if config_path:
             return run_pipeline(config_path=config_path, hours=hours)
         return run_pipeline(hours=hours)
 
     res = await asyncio.to_thread(_runner)
     items = res.get("items", []) if isinstance(res, dict) else (res or [])
-    return _to_llm_schema(items)
 
-# Быстрый самотест:
-# if __name__ == "__main__":
-#     import json
-#     async def _main():
-#         payload = await build_llm_payload(hours=48)
-#         print(json.dumps(payload[:3], ensure_ascii=False, indent=2))
-#     asyncio.run(_main())
+    items = [it for it in items if not _has_bad_http(it)]
+
+    return _to_llm_schema(items)
