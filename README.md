@@ -145,7 +145,6 @@ Sources (RSS / RSS-Bridge / HTTP)
 # В корне проекта
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env    # создайте и заполните .env
 ```
 
@@ -154,12 +153,11 @@ cp .env.example .env    # создайте и заполните .env
 Создайте `services/rss_bridge/docker-compose.yml`:
 
 ```yaml
-version: "3.8"
 services:
   rss-bridge:
     image: rssbridge/rss-bridge:latest
     ports:
-      - "3001:80"
+      - "3000:80"
     environment:
       - TZ=UTC
     restart: unless-stopped
@@ -279,12 +277,6 @@ SOURCES_CONFIG=./config/sources.csv
 * Кэш и эмбеддинги для ускорения повторных запросов.
 * Бэктест на историческом окне (корреляция hotness ↔ последующая волатильность).
 * Telegram-бот/веб-панель для публикации черновиков.
-
----
-
-## Лицензия
-
-MIT (если не указано иное в репозитории). Проверьте файл `LICENSE` в корне проекта.
 
 ---
 
