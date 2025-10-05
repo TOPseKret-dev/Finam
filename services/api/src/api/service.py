@@ -7,14 +7,14 @@ from urllib.parse import urlparse
 import os
 import json
 import re
+import ssl
 from services.radar_parser.llm_async_adapter import build_llm_payload
 
 TIME_DECAY_HALF_LIFE_HOURS = 6.0
-
 VELOCITY_SCALE = 3.0
-
 MAX_CONFIRMATIONS_NORM = 3.0
 STRICT_MODE = True
+
 WEIGHTS = {
     "financial": 0.45,
     "recency": 0.20,
@@ -49,7 +49,7 @@ _TICKER_RE = re.compile(
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_CHAT_URL = "https://api.openrouter.ai/chat/completions"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 SYSTEM_PROMPT = (
     '''Ты — RADAR.AI, автономный агент для анализа новостных потоков.
@@ -145,18 +145,37 @@ SOURCE_REPUTATION: Dict[str, float] = {
     "economist.com": 0.90,
     "tass.ru": 0.60,
     "ria.ru": 0.55,
-
 }
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Создаёт SSL-контекст с доверенными корневыми сертификатами; учитывает SSL_CERT_FILE/SSL_CERT_DIR и certifi (если установлен)."""
+    ctx = ssl.create_default_context()
+    cafile = os.getenv("SSL_CERT_FILE")
+    capath = os.getenv("SSL_CERT_DIR")
+    if cafile or capath:
+        try:
+            ctx.load_verify_locations(cafile=cafile, capath=capath)
+        except Exception:
+            pass
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        pass
+    return ctx
 
 
 def time_decay_score(dt: datetime, now: Optional[datetime] = None,
                      half_life_hours: float = TIME_DECAY_HALF_LIFE_HOURS) -> float:
+    """Экспоненциальный скор свежести в [0,1] по возрасту события и полу-периоду."""
     now = now or datetime.now(timezone.utc)
     hours = max(0.0, (now - dt).total_seconds() / 3600.0)
     return 2 ** (-hours / half_life_hours)
 
 
 def get_domain(url: str) -> str:
+    """Возвращает домен из URL или пустую строку при ошибке."""
     if not url:
         return ""
     try:
@@ -166,16 +185,18 @@ def get_domain(url: str) -> str:
 
 
 def get_source_reputation(url_or_source: str) -> float:
+    """Оценивает репутацию источника по известным доменам; .gov получает повышенную оценку."""
     d = get_domain(url_or_source) or (url_or_source or "").lower()
     for known, rep in SOURCE_REPUTATION.items():
         if known in d:
             return rep
     if d.endswith(".gov") or ".gov." in d:
         return 0.9
-    return 0.4  # default low-medium
+    return 0.4
 
 
 def _path_flags(url: str) -> Tuple[bool, bool]:
+    """Возвращает (allow, block) на основе рубрик в пути URL."""
     u = (url or "").lower()
     allow = any(s in u for s in FIN_ALLOWED_SECTIONS)
     block = any(s in u for s in FIN_BLOCK_SECTIONS)
@@ -183,6 +204,7 @@ def _path_flags(url: str) -> Tuple[bool, bool]:
 
 
 def adjust_rep_by_path(rep: float, url: str) -> float:
+    """Корректирует репутацию с учётом рубрики URL (финансовые/нефинансовые разделы)."""
     allow, block = _path_flags(url or "")
     if allow:
         rep = min(1.0, rep + 0.10)
@@ -192,6 +214,7 @@ def adjust_rep_by_path(rep: float, url: str) -> float:
 
 
 def normalize_velocity(repeats: float, age_hours: float, has_time: bool) -> float:
+    """Нормализует скорость распространения через tanh(rate / VELOCITY_SCALE)."""
     if not has_time or repeats <= 1 or age_hours <= 0:
         return 0.0
     rate = repeats / max(age_hours, 1.0)
@@ -199,14 +222,17 @@ def normalize_velocity(repeats: float, age_hours: float, has_time: bool) -> floa
 
 
 def normalize_confirmations(num_links: int, repeat_count: int) -> float:
+    """Нормализует подтверждения, ограничивая MAX_CONFIRMATIONS_NORM."""
     return min(1.0, num_links / MAX_CONFIRMATIONS_NORM)
 
 
 def normalize_entities_count(n: int) -> float:
+    """Нормализует количество сущностей/тикеров до [0,1] с мягким капом на 3."""
     return min(1.0, n / 3.0)
 
 
 def compute_financial_score(text: str, url: str, entities: Optional[Dict[str, Any]]) -> float:
+    """Возвращает скор финансовой релевантности по ключам, тикерам и рубрике URL."""
     t = (text or "").lower()
     allow, block = _path_flags(url)
     kw_hit = any(k in t for k in FIN_KEYWORDS)
@@ -219,11 +245,12 @@ def compute_financial_score(text: str, url: str, entities: Optional[Dict[str, An
     if ticker_hit:
         score += 0.35
     if block and not (kw_hit or ticker_hit):
-        score *= 0.25  # явная нефинансовая рубрика без ключей/тикеров — жёсткий штраф
+        score *= 0.25
     return min(1.0, score)
 
 
 def compute_hotness(features: Dict[str, float], weights: Dict[str, float] = WEIGHTS) -> float:
+    """Считает общий hotness как взвешенную сумму фич с ограничением [0,1]."""
     acc = 0.0
     for k, w in weights.items():
         acc += w * float(features.get(k, 0.0))
@@ -231,6 +258,7 @@ def compute_hotness(features: Dict[str, float], weights: Dict[str, float] = WEIG
 
 
 def make_why_now(features: Dict[str, Any]) -> str:
+    """Формирует краткое объяснение «почему сейчас» по порогам фич."""
     reasons = []
     if features.get("financial", 0.0) > 0.6:
         reasons.append("финансовая релевантность (сигнал)")
@@ -250,6 +278,7 @@ def make_why_now(features: Dict[str, Any]) -> str:
 
 
 def _coerce_items(data: Union[List[Dict[str, Any]], Dict[str, Any], None]) -> List[Dict[str, Any]]:
+    """Приводит вход к списку элементов (list[dict])."""
     if data is None:
         return []
     if isinstance(data, list):
@@ -260,13 +289,12 @@ def _coerce_items(data: Union[List[Dict[str, Any]], Dict[str, Any], None]) -> Li
 
 
 def _safe_parse_time(t: Any, fallback: datetime) -> Tuple[datetime, bool]:
-    """Возвращает (dt, has_time). Понимает ISO 8601 и 'Z'."""
+    """Парсит ISO-время (поддерживает суффикс 'Z'); возвращает (dt_utc, has_time)."""
     if isinstance(t, datetime):
         return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)), True
     if isinstance(t, str):
         s = t.strip()
         try:
-            # поддержка 'Z'
             if s.endswith("Z"):
                 s = s[:-1] + "+00:00"
             dt = datetime.fromisoformat(s)
@@ -278,29 +306,53 @@ def _safe_parse_time(t: Any, fallback: datetime) -> Tuple[datetime, bool]:
     return fallback, False
 
 
-# ============================== LLM ==============================
-
-async def generate_draft_openrouter(item: Dict[str, Any], system_prompt: str = SYSTEM_PROMPT) -> str:
+def _openrouter_headers() -> Dict[str, str]:
+    """Собирает HTTP-заголовки для OpenRouter с необязательной атрибуцией приложения."""
     if not OPENROUTER_API_KEY:
-        return ""
-
-    text = (item.get("text") or "")[:3000]
-    links = item.get("links") or []
-    entities = item.get("entities") or {}
-    user_prompt = (
-        f"TEXT:\n{text}\n\n"
-        f"LINKS:\n{', '.join(links[:5])}\n\n"
-        f"ENTITIES:\n{entities}\n"
-    )
-
+        return {"Content-Type": "application/json"}
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://your.app/finam-radar",
-        "X-Title": "Finam Radar Draft",
     }
+    referer = os.getenv("OPENROUTER_SITE_URL", "https://finam-radar.local")
+    title = os.getenv("OPENROUTER_APP_TITLE", "Finam Radar")
+    headers["HTTP-Referer"] = referer
+    headers["X-Title"] = title
+    return headers
+
+
+def _make_connector() -> aiohttp.TCPConnector:
+    """Создаёт aiohttp-коннектор с проверкой SSL (можно отключить через OPENROUTER_INSECURE_SSL=1)."""
+    if os.getenv("OPENROUTER_INSECURE_SSL") == "1":
+        return aiohttp.TCPConnector(ssl=False)
+    return aiohttp.TCPConnector(ssl=_ssl_context())
+
+
+async def _post_openrouter(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Отправляет POST на OpenRouter и возвращает распарсенный JSON либо подробную ошибку."""
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not set")
+    async with aiohttp.ClientSession(connector=_make_connector()) as s:
+        async with s.post(OPENROUTER_CHAT_URL, json=payload, headers=_openrouter_headers(), timeout=60) as resp:
+            text = await resp.text()
+            if resp.status != 200:
+                raise RuntimeError(f"OpenRouter HTTP {resp.status}: {text[:300]}")
+            try:
+                return json.loads(text)
+            except Exception as e:
+                raise RuntimeError(f"OpenRouter JSON parse error: {e}; payload: {text[:300]}")
+
+
+async def generate_draft_openrouter(item: Dict[str, Any], system_prompt: str = SYSTEM_PROMPT) -> str:
+    """Генерирует драфт по одному событию через OpenRouter; возвращает текст ассистента."""
+    if not OPENROUTER_API_KEY:
+        return ""
+    text = (item.get("text") or "")[:3000]
+    links = item.get("links") or []
+    entities = item.get("entities") or {}
+    user_prompt = f"TEXT:\n{text}\n\nLINKS:\n{', '.join(links[:5])}\n\nENTITIES:\n{entities}\n"
     payload = {
-        "model": "google/gemini-2.5-pro",
+        "model": "google/gemini-2.5-flash",
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -308,17 +360,18 @@ async def generate_draft_openrouter(item: Dict[str, Any], system_prompt: str = S
         "max_tokens": 800,
         "temperature": 0.3,
     }
-    async with aiohttp.ClientSession() as s:
-        async with s.post(OPENROUTER_CHAT_URL, json=payload, headers=headers, timeout=60) as resp:
-            resp.raise_for_status()
-            j = await resp.json()
-            return j["choices"][0]["message"]["content"].strip()
+    j = await _post_openrouter(payload)
+    try:
+        content = j["choices"][0]["message"]["content"]
+        return (content or "").strip()
+    except Exception as e:
+        raise RuntimeError(f"OpenRouter schema mismatch: {e}; keys={list(j.keys())}")
 
 
 async def generate_overall_summary_openrouter(items_out: List[Dict[str, Any]],
                                               system_prompt: str = SYSTEM_PROMPT) -> Dict[str, Any]:
+    """Строит сводное резюме по рынку из топ-событий (LLM) или локальный фолбэк по hotness."""
     if not OPENROUTER_API_KEY:
-        # локальный фолбэк по hotness
         if not items_out:
             return {
                 "impact_level": "нет",
@@ -328,23 +381,15 @@ async def generate_overall_summary_openrouter(items_out: List[Dict[str, Any]],
             }
         avg_hot = sum(i.get("hotness", 0.0) for i in items_out) / max(1, len(items_out))
         if avg_hot < 0.2:
-            level = "нет"
-            msg = "Существенного влияния на российский рынок не ожидается."
+            level, msg = "нет", "Существенного влияния на российский рынок не ожидается."
         elif avg_hot < 0.4:
-            level = "низкое"
-            msg = "Влияние ограниченное; существенных драйверов для RU рынка не просматривается."
+            level, msg = "низкое", "Влияние ограниченное; существенных драйверов для RU рынка не просматривается."
         elif avg_hot < 0.7:
-            level = "среднее"
-            msg = "Есть умеренные факторы влияния; реакция может быть точечной по секторам."
+            level, msg = "среднее", "Есть умеренные факторы влияния; реакция может быть точечной по секторам."
         else:
-            level = "высокое"
-            msg = "Высокая значимость событий; возможно влияние на индекс и рубль."
-        return {
-            "impact_level": level,
-            "summary": msg,
-            "watchlist": [],
-            "rationale": f"Локальный фолбэк по среднему hotness={avg_hot:.2f}."
-        }
+            level, msg = "высокое", "Высокая значимость событий; возможно влияние на индекс и рубль."
+        return {"impact_level": level, "summary": msg, "watchlist": [],
+                "rationale": f"Локальный фолбэк по среднему hotness={avg_hot:.2f}."}
 
     compact_items = []
     for x in items_out[:10]:
@@ -369,13 +414,6 @@ async def generate_overall_summary_openrouter(items_out: List[Dict[str, Any]],
         f"items = {json.dumps(compact_items, ensure_ascii=False)}\n\n"
         f"{SUMMARY_SCHEMA_DESC}"
     )
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://your.app/finam-radar",
-        "X-Title": "Finam Radar Overall Summary",
-    }
     payload = {
         "model": "google/gemini-2.5-pro",
         "messages": [
@@ -385,58 +423,46 @@ async def generate_overall_summary_openrouter(items_out: List[Dict[str, Any]],
         "max_tokens": 600,
         "temperature": 0.2,
     }
-    async with aiohttp.ClientSession() as s:
-        async with s.post(OPENROUTER_CHAT_URL, json=payload, headers=headers, timeout=60) as resp:
-            resp.raise_for_status()
-            j = await resp.json()
-            content = j["choices"][0]["message"]["content"].strip()
-            try:
-                parsed = json.loads(content)
-                if not isinstance(parsed, dict):
-                    raise ValueError("not a dict")
-                for k in ("impact_level", "summary", "watchlist", "rationale"):
-                    parsed.setdefault(k, "" if k != "watchlist" else [])
-                return parsed
-            except Exception:
-                return {
-                    "impact_level": "низкое" if len(items_out) and (
-                            sum(i.get("hotness", 0.0) for i in items_out) / len(items_out) < 0.4) else "среднее",
-                    "summary": content[:1200],
-                    "watchlist": [],
-                    "rationale": "Модель вернула не-JSON; контент сохранён как summary."
-                }
+    j = await _post_openrouter(payload)
+    content = j["choices"][0]["message"]["content"].strip()
+    try:
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("not a dict")
+        for k in ("impact_level", "summary", "watchlist", "rationale"):
+            parsed.setdefault(k, "" if k != "watchlist" else [])
+        return parsed
+    except Exception:
+        return {
+            "impact_level": "низкое" if len(items_out) and (
+                        sum(i.get("hotness", 0.0) for i in items_out) / len(items_out) < 0.4) else "среднее",
+            "summary": content[:1200],
+            "watchlist": [],
+            "rationale": "Модель вернула не-JSON; контент сохранён как summary."
+        }
 
-
-# ============================== Получение самых важных новостей ==============================
 
 async def get_top_k(window: int = 24, k: int = 5,
                     items: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """
-    Возвращает dict:
-      {
-        "items": [
-          {headline, hotness, why_now, entities, sources, timeline, draft, dedup_group, raw_item, features}
-        ],
-        "generated_at": iso,
-        "k": k,
-        "overall_summary": { impact_level, summary, watchlist, rationale }
-      }
-    """
+    """Возвращает топ-k горячих событий и сводку влияния на рынок РФ."""
     data = _coerce_items(items)
     if not data:
         data = await build_llm_payload(window)
+        try:
+            open('data.json', 'w').write(json.dumps(data, ensure_ascii=False, indent=2))
+        except Exception:
+            pass
 
     now = datetime.now(timezone.utc)
     items_out: List[Dict[str, Any]] = []
 
     for it in data:
-
         raw_time = it.get("Время выхода") or it.get("time") or it.get("time_published")
         t_dt, has_time = _safe_parse_time(raw_time, now)
         age_hours = max(0.0, (now - t_dt).total_seconds() / 3600.0)
         recency = time_decay_score(t_dt, now) if has_time else 0.0
 
-        repeats = float(it.get("количество повторений", it.get("repeat_count", 1)))
+        repeats = float(it.get("количество повторений", it.get("количество повторяшек", it.get("repeat_count", 1))))
         inner_links = (
                 it.get("список ссылок внутри текста")
                 or it.get("links_in_text")
@@ -449,7 +475,7 @@ async def get_top_k(window: int = 24, k: int = 5,
                 it.get("ссылка на саму статью")
                 or it.get("article_url")
                 or it.get("url")
-                or (it.get("source") if (it.get("source") and it.get("source").startswith("http")) else "")
+                or (it.get("source") if (it.get("source") and str(it.get("source")).startswith("http")) else "")
         )
         source_field = it.get("источник") or it.get("source") or ""
         source_rep = get_source_reputation(url or source_field)
@@ -462,14 +488,14 @@ async def get_top_k(window: int = 24, k: int = 5,
 
         text_for_score = it.get("текст статьи") or it.get("text") or ""
         fin_score = compute_financial_score(text_for_score, url or "", entities)
-
         if fin_score < 0.30:
             continue
 
         if STRICT_MODE:
+            low = text_for_score.lower()
             strict_hit = bool(_TICKER_RE.search(text_for_score)) or any(
-                key in text_for_score.lower()
-                for key in ("ставк", "инфляц", "индекс", "brent", "usd/rub", "eur/rub", "офз", "купон", "доходност")
+                key in low for key in
+                ("ставк", "инфляц", "индекс", "brent", "usd/rub", "eur/rub", "офз", "купон", "доходност")
             )
             if not strict_hit:
                 continue
@@ -524,7 +550,6 @@ async def get_top_k(window: int = 24, k: int = 5,
 
     items_out.sort(key=lambda x: x["hotness"], reverse=True)
     top_items = items_out[:k]
-
     overall_summary = await generate_overall_summary_openrouter(top_items)
 
     return {
